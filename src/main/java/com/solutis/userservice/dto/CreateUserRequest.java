@@ -21,8 +21,7 @@ public record CreateUserRequest(
         @Size(min = 8, max = 100)
         String password,
 
-        @NotBlank
-        @Size(min = 8, max = 100)
+        @NotNull(message = "Role é obrigatória")
         Role role
 
 ) {
