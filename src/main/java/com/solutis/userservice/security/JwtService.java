@@ -1,4 +1,6 @@
 package com.solutis.userservice.security;
+
+import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,26 +23,39 @@ public class JwtService {
         this.secretKey = Keys.hmacShaKeyFor(
                 secret.getBytes(StandardCharsets.UTF_8)
         );
+
         this.expiration = expiration;
     }
 
     public String generateToken(
             String userId,
+            String name,
             String email,
             String role
     ) {
         Date now = new Date();
+
         Date expirationDate = new Date(
                 now.getTime() + expiration
         );
 
         return Jwts.builder()
                 .subject(userId)
+                .claim("name", name)
                 .claim("email", email)
                 .claim("role", role)
                 .issuedAt(now)
                 .expiration(expirationDate)
                 .signWith(secretKey)
                 .compact();
+    }
+
+    public Claims extractClaims(String token) {
+
+        return Jwts.parser()
+                .verifyWith(secretKey)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
     }
 }

@@ -1,16 +1,20 @@
 package com.solutis.userservice.service;
 
-
+import com.solutis.userservice.dto.ChangePasswordRequest;
+import com.solutis.userservice.dto.ClientOptionResponse;
 import com.solutis.userservice.dto.CreateUserRequest;
+import com.solutis.userservice.dto.RegisterUserRequest;
 import com.solutis.userservice.dto.UserResponse;
+import com.solutis.userservice.dto.UserSummaryResponse;
+import com.solutis.userservice.entity.Role;
 import com.solutis.userservice.entity.User;
 import com.solutis.userservice.exception.EmailAlreadyExistsException;
 import com.solutis.userservice.exception.UserNotFoundException;
 import com.solutis.userservice.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.List;
 import java.util.UUID;
@@ -23,36 +27,111 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
 
     @Transactional
-    public UserResponse create(CreateUserRequest request) {
+    public UserResponse create(
+            CreateUserRequest request
+    ) {
 
         if (userRepository.existsByEmail(request.email())) {
             throw new EmailAlreadyExistsException(
-                    "Email já cadastrado: " + request.email()
+                    "Email já cadastrado: " +
+                            request.email()
             );
         }
 
         User user = User.builder()
                 .name(request.name())
                 .email(request.email())
-                .passwordHash(passwordEncoder.encode(request.password()))
+                .passwordHash(
+                        passwordEncoder.encode(
+                                request.password()
+                        )
+                )
                 .role(request.role())
                 .active(true)
                 .build();
 
-        User savedUser = userRepository.save(user);
+        User savedUser =
+                userRepository.save(user);
 
-        return UserResponse.fromEntity(savedUser);
+        return UserResponse.fromEntity(
+                savedUser
+        );
+    }
+
+    @Transactional
+    public UserResponse register(
+            RegisterUserRequest request
+    ) {
+
+        if (userRepository.existsByEmail(request.email())) {
+            throw new EmailAlreadyExistsException(
+                    "Email já cadastrado: " +
+                            request.email()
+            );
+        }
+
+        if (!request.password()
+                .equals(request.confirmPassword())) {
+
+            throw new IllegalArgumentException(
+                    "As senhas não conferem"
+            );
+        }
+
+        User user = User.builder()
+                .name(request.name())
+                .email(request.email())
+                .passwordHash(
+                        passwordEncoder.encode(
+                                request.password()
+                        )
+                )
+                .role(Role.CLIENT)
+                .active(true)
+                .build();
+
+        User savedUser =
+                userRepository.save(user);
+
+        return UserResponse.fromEntity(
+                savedUser
+        );
     }
 
     @Transactional(readOnly = true)
-    public UserResponse findById(UUID id) {
+    public UserResponse findById(
+            UUID id
+    ) {
 
-        User user = userRepository.findById(id)
-                .orElseThrow(() ->
-                        new UserNotFoundException("Usuário não encontrado: " + id)
-                );
+        User user =
+                userRepository.findById(id)
+                        .orElseThrow(() ->
+                                new UserNotFoundException(
+                                        "Usuário não encontrado: " +
+                                                id
+                                )
+                        );
 
         return UserResponse.fromEntity(user);
+    }
+
+    @Transactional(readOnly = true)
+    public UserSummaryResponse findSummaryById(
+            UUID id
+    ) {
+
+        User user =
+                userRepository.findById(id)
+                        .orElseThrow(() ->
+                                new UserNotFoundException(
+                                        "Usuário não encontrado: " +
+                                                id
+                                )
+                        );
+
+        return UserSummaryResponse.fromEntity(
+                user
+        );
     }
 
     @Transactional(readOnly = true)
@@ -64,19 +143,45 @@ public class UserService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<ClientOptionResponse> findActiveClients() {
+
+        return userRepository.findAll()
+                .stream()
+                .filter(User::isActive)
+                .filter(user ->
+                        user.getRole() == Role.CLIENT
+                )
+                .map(
+                        ClientOptionResponse::fromEntity
+                )
+                .toList();
+    }
+
     @Transactional
-    public UserResponse update(UUID id, CreateUserRequest request) {
+    public UserResponse update(
+            UUID id,
+            CreateUserRequest request
+    ) {
 
-        User user = userRepository.findById(id)
-                .orElseThrow(() ->
-                        new UserNotFoundException("Usuário não encontrado: " + id)
-                );
+        User user =
+                userRepository.findById(id)
+                        .orElseThrow(() ->
+                                new UserNotFoundException(
+                                        "Usuário não encontrado: " +
+                                                id
+                                )
+                        );
 
-        if (!user.getEmail().equals(request.email())
-                && userRepository.existsByEmail(request.email())) {
+        if (!user.getEmail()
+                .equals(request.email())
+                && userRepository.existsByEmail(
+                request.email()
+        )) {
 
             throw new EmailAlreadyExistsException(
-                    "Email já cadastrado: " + request.email()
+                    "Email já cadastrado: " +
+                            request.email()
             );
         }
 
@@ -84,16 +189,73 @@ public class UserService {
         user.setEmail(request.email());
         user.setRole(request.role());
 
-        return UserResponse.fromEntity(userRepository.save(user));
+        return UserResponse.fromEntity(
+                userRepository.save(user)
+        );
+    }
+
+    @Transactional
+    public void changeOwnPassword(
+            UUID userId,
+            ChangePasswordRequest request
+    ) {
+
+        User user =
+                userRepository.findById(userId)
+                        .orElseThrow(() ->
+                                new UserNotFoundException(
+                                        "Usuário não encontrado: " +
+                                                userId
+                                )
+                        );
+
+        if (!user.isActive()) {
+            throw new IllegalArgumentException(
+                    "Usuário está inativo"
+            );
+        }
+
+        if (user.getPasswordHash() == null
+                || !passwordEncoder.matches(
+                request.currentPassword(),
+                user.getPasswordHash()
+        )) {
+
+            throw new IllegalArgumentException(
+                    "A senha atual está incorreta"
+            );
+        }
+
+        if (passwordEncoder.matches(
+                request.newPassword(),
+                user.getPasswordHash()
+        )) {
+
+            throw new IllegalArgumentException(
+                    "A nova senha deve ser diferente da senha atual"
+            );
+        }
+
+        user.setPasswordHash(
+                passwordEncoder.encode(
+                        request.newPassword()
+                )
+        );
+
+        userRepository.save(user);
     }
 
     @Transactional
     public void deactivate(UUID id) {
 
-        User user = userRepository.findById(id)
-                .orElseThrow(() ->
-                        new UserNotFoundException("Usuário não encontrado: " + id)
-                );
+        User user =
+                userRepository.findById(id)
+                        .orElseThrow(() ->
+                                new UserNotFoundException(
+                                        "Usuário não encontrado: " +
+                                                id
+                                )
+                        );
 
         user.setActive(false);
 
